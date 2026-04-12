@@ -14,16 +14,26 @@
 
 ## 실행 방법
 ```bash
-npm install
-cp .env.example .env
-npm run dev
+npm install                          
+node src/server.js
 ```
 
 ## 테스트 흐름
+### 첫번째 방법 (추천 ㄴㄴ )
 1. 서버 실행
 2. 프론트 `index.html` / `api.js`를 같은 폴더에 두고 열기
 3. 텍스트 메시지 전송
 4. PDF 또는 이미지 업로드 후 메시지 전송
+
+### 두번째 방법 
+
+```
+npm install                          
+node src/server.js
+```
+- 프론트는 따로 실행 (localhost:3000 으로 실행해주세요)
+- python -m http.server 3000 ; 실행 명령어 
+
 
 ## 폴더 구조
 ```text
