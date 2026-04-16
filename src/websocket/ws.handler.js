@@ -6,13 +6,13 @@ import { handleIncomingMessage } from '../services/chat.service.js';
 import { logger } from '../utils/logger.js';
 
 export function attachWsHandlers(ws) {
-  ws.on('message', (rawMessage) => {
+  ws.on('message', async (rawMessage) => {
     try {
       const text = rawMessage.toString();
       const payload = JSON.parse(text);
       logger.info('WS message received:', payload.type, payload.sessionId);
 
-      const { response } = handleIncomingMessage(payload);
+      const { response } = await handleIncomingMessage(payload);
       ws.send(JSON.stringify(response));
     } catch (error) {
       logger.error('WS message handling failed:', error.message);

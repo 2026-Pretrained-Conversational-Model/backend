@@ -11,4 +11,7 @@ export const env = {
   clientOrigin: process.env.CLIENT_ORIGIN || '*',
   uploadDir: process.env.UPLOAD_DIR || 'uploads',
   maxFileSizeMb: Number(process.env.MAX_FILE_SIZE_MB || 20),
+
+  aiOrchestratorUrl: process.env.AI_ORCHESTRATOR_URL || 'http://localhost:8000',
+  aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 120000),
 };
