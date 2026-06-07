@@ -1,11 +1,18 @@
 /**
  * chat.service.js
  * 역할: WebSocket으로 들어온 payload를 해석하고, 프론트와 호환되는 응답 JSON을 만듭니다.
- * 현재는 Python/SageMaker 연결 전이므로 mock 응답만 반환합니다.
+ *
+ * v2 변경:
+ * - file_path를 직접 전달하는 대신, uploadFile()로 파일 바이트를 전송.
+ *   AI Orchestrator가 별도 서버(RunPod)에 있어도 파일 전달 가능.
+ * - 흐름: uploadFile(multipart) → /upload 으로 PDF 전송
+ *         → requestChat(JSON) → /chat 으로 텍스트만 전송
+ *         (ai-orchestrator 세션에 이미 PDF가 부착된 상태)
  */
 import { appendHistory, getOrCreateSession } from './session.service.js';
 import { getUploadedFileMeta } from '../repositories/file-meta.store.js';
-import { requestChat } from '../config/ai.client.js';
+import { requestChat, uploadFile } from '../config/ai.client.js';
+import { logger } from '../utils/logger.js';
 
 function buildTextResponse(content) {
   return {
@@ -84,17 +91,27 @@ export async function handleIncomingMessage(payload) {
         additionalFiles: extras,
       });
 
-      const aiPayload = {
-        session_id: sessionId,
-        user_text: content || '',
-      };
-
+      // ── PDF 파일이면 ai-orchestrator에 multipart로 전송 ──
       if (primaryFile?.storedPath && primaryFile?.fileName?.toLowerCase().endsWith('.pdf')) {
-        aiPayload.file_path = primaryFile.storedPath;
-        aiPayload.file_name = primaryFile.fileName;
+        try {
+          logger.info('Uploading PDF to ai-orchestrator:', primaryFile.fileName);
+          await uploadFile(sessionId, primaryFile.storedPath, primaryFile.fileName);
+          logger.info('PDF upload complete:', primaryFile.fileName);
+        } catch (uploadErr) {
+          logger.error('PDF upload failed:', uploadErr.message);
+          return {
+            ok: false,
+            response: buildErrorResponse(`PDF 업로드 실패: ${uploadErr.message}`),
+          };
+        }
       }
 
-      const aiResponse = await requestChat(aiPayload);
+      // ── 채팅 요청 (file_path 없이 — 이미 세션에 PDF 부착됨) ──
+      const aiResponse = await requestChat({
+        session_id: sessionId,
+        user_text: content || '',
+      });
+
       const reply = normalizeAiAnswer(aiResponse);
 
       appendHistory(sessionId, 'assistant', reply.content, {
