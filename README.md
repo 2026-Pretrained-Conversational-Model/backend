@@ -1,29 +1,62 @@
-# Node WS Backend Baseline
+# backend — Node.js WebSocket 게이트웨이
 
-최소 Node.js 백엔드
+> **브라우저와 AI 오케스트레이터를 잇는 중계 계층.** 프론트엔드와는 WebSocket으로 실시간 채팅을, AI 오케스트레이터(FastAPI)와는 HTTP로 통신하며, 업로드된 PDF를 AI 서버로 전달합니다.
 
-## 프론트 호환 기준
-- WebSocket URL: `ws://localhost:8080/ws/chat`
-- 파일 업로드 URL: `http://localhost:8080/api/upload`
-- 프론트가 보내는 payload 타입 지원:
-  - `message`
-  - `message_with_file`
-- 서버 응답 형식:
-  - `{ "type": "text", "content": "..." }`
-  - `{ "type": "error", "content": "..." }`
+전체 프로젝트 개요는 대표 저장소 [docs](https://github.com/2026-Pretrained-Conversational-Model/docs)를 참고하세요.
 
-## 실행 방법
-```bash
-npm install                          
-node src/server.js
+```
+[프론트엔드] ⇄ WebSocket ⇄ ★[Node.js 게이트웨이]★ ⇄ HTTP ⇄ [FastAPI 오케스트레이터(ai-engine)]
 ```
 
-## 테스트 흐름
-### 첫번째 방법 (추천 ㄴㄴ )
-1. 서버 실행
-2. 프론트 `index.html` / `api.js`를 같은 폴더에 두고 열기
-3. 텍스트 메시지 전송
-4. PDF 또는 이미지 업로드 후 메시지 전송
+---
+
+## 역할
+
+| 책임 | 설명 |
+| --- | --- |
+| 프로토콜 번역 | 브라우저의 WebSocket ↔ 오케스트레이터의 HTTP |
+| 파일 중계 | 업로드된 PDF를 `/upload`로 오케스트레이터에 전달 |
+| 입출력 정규화 | 프론트가 기대하는 `{type, content}` JSON으로 응답 가공 |
+
+## 프론트 호환 기준
+
+- WebSocket URL: `ws://localhost:8080/ws/chat`
+- 파일 업로드 URL: `http://localhost:8080/api/upload`
+- 수신 payload 타입: `message`, `message_with_file`
+- 송신 응답: `{ "type": "text", "content": "..." }` / `{ "type": "error", "content": "..." }`
+
+---
+
+## 요청 흐름
+
+```
+1) 텍스트만:
+   브라우저 ─WS{type:message}→ 게이트웨이
+       → requestChat(POST /chat) → 오케스트레이터
+       → 답변을 {type:text}로 반환
+
+2) 파일 포함:
+   브라우저 ─POST /api/upload→ 게이트웨이 (디스크 저장 + fileId 발급)
+   브라우저 ─WS{type:message_with_file, fileId}→ 게이트웨이
+       → uploadFile(POST /upload, 파일 바이트) → 오케스트레이터 세션에 PDF 부착
+       → requestChat(POST /chat, 텍스트만) → 답변 반환
+```
+
+> PDF는 경로가 아니라 **바이트를 multipart로 전송**합니다. 오케스트레이터가 별도 서버(RunPod 등)에 있어도 동작하도록 하기 위함입니다.
+
+---
+
+## 실행
+
+```bash
+npm install
+cp .env.example .env       # AI_ORCHESTRATOR_URL 등 설정
+npm run dev
+```
+
+환경 변수는 [.env.example](.env.example) 참고 (`PORT`, `AI_ORCHESTRATOR_URL`, `AI_TIMEOUT_MS`, `MAX_FILE_SIZE_MB` 등).
+
+---
 
 ### 두번째 방법 
 
@@ -36,66 +69,44 @@ node src/server.js
 
 
 ## 폴더 구조
-```text
-node-ws-backend/
-├── src/
-│   ├── app.js
-│   ├── server.js
-│   ├── config/
-│   │   └── env.js
-│   ├── controllers/
-│   │   ├── health.controller.js
-│   │   └── upload.controller.js
-│   ├── middlewares/
-│   │   ├── error.middleware.js
-│   │   └── upload.middleware.js
-│   ├── repositories/
-│   │   └── session.store.js
-│   ├── routes/
-│   │   ├── health.routes.js
-│   │   └── upload.routes.js
-│   ├── services/
-│   │   ├── chat.service.js
-│   │   ├── file.service.js
-│   │   └── session.service.js
-│   ├── utils/
-│   │   └── logger.js
-│   └── websocket/
-│       ├── ws.events.js
-│       ├── ws.handler.js
-│       └── ws.server.js
-├── uploads/
-├── .env.example
-├── package.json
-└── README.md
+
+```
+src/
+├── server.js                진입점 (HTTP + WebSocket 부착)
+├── app.js                   Express 앱·CORS·REST 라우트
+├── config/
+│   ├── env.js               환경 변수 로딩
+│   └── ai.client.js         오케스트레이터 HTTP 클라이언트(axios) — requestChat / uploadFile
+├── controllers/             health / upload
+├── middlewares/             error / upload(multer)
+├── repositories/
+│   ├── session.store.js     세션 데이터 Map 저장소
+│   └── file-meta.store.js   업로드 파일 메타(fileId→경로) Map
+├── routes/                  health / upload
+├── services/
+│   ├── chat.service.js      payload 해석 + 오케스트레이터 호출 + 응답 정규화
+│   ├── session.service.js   세션 생성/조회/히스토리
+│   └── file.service.js      업로드 파일 메타 구성
+├── utils/logger.js
+└── websocket/               ws.server / ws.handler / ws.events
 ```
 
-## 파일별 역할
-- `src/server.js`: HTTP 서버와 WebSocket 서버를 함께 실행하는 진입점
-- `src/app.js`: Express 앱 설정, CORS, JSON 파싱, 라우트 연결
-- `src/config/env.js`: 환경변수 로딩 및 기본값 관리
-- `src/routes/health.routes.js`: 헬스체크 라우트
-- `src/routes/upload.routes.js`: 파일 업로드 라우트
-- `src/controllers/health.controller.js`: 헬스체크 응답 처리
-- `src/controllers/upload.controller.js`: 업로드 요청 처리
-- `src/middlewares/upload.middleware.js`: multer 기반 업로드 처리
-- `src/middlewares/error.middleware.js`: 공통 에러 처리
-- `src/repositories/session.store.js`: 세션 데이터를 메모리에 저장하는 Map 저장소
-- `src/services/session.service.js`: 세션 생성/조회/히스토리 추가
-- `src/services/file.service.js`: 업로드 파일 메타데이터 정리
-- `src/services/chat.service.js`: 메시지 payload를 해석하고 임시 응답 생성
-- `src/websocket/ws.server.js`: `/ws/chat` 경로로 WebSocket 업그레이드 처리
-- `src/websocket/ws.handler.js`: 메시지 수신/응답/에러 처리
-- `src/websocket/ws.events.js`: 지원하는 WS 이벤트 상수 정의
-- `src/utils/logger.js`: 간단한 콘솔 로깅 유틸
+`routes → controllers → services → repositories` 계층 분리로, 저장소 교체(예: Redis) 같은 변경의 영향 범위를 좁혔습니다.
+
+---
 
 ## 현재 상태
-이 버전은 Python / SageMaker 연결 전의 baseline입니다.
-- 텍스트 채팅 echo + mock 응답
-- 파일 업로드 저장
-- 세션별 히스토리 저장
 
-나중에 확장할 부분
-- `chat.service.js`에서 Python API 호출
-- 파일 업로드 후 PDF 파싱 파이프라인 연결
-- 세션 저장소를 Redis/DB로 교체
+- 오케스트레이터(ai-engine) 연동 **완료** — 텍스트 채팅과 PDF 업로드가 실제 AI 응답으로 이어집니다.
+- 세션 저장소는 인메모리 `Map`(보조 히스토리). 답변에 쓰이는 실제 기억은 오케스트레이터가 소유합니다.
+
+### 향후
+- 세션 저장소를 Redis/DB로 교체 (다중 인스턴스 확장)
+- 업로드 파일 정리(cleanup) 및 객체 스토리지(S3) 전환
+
+---
+
+## 담당 역할
+
+- 게이트웨이 설계·오케스트레이터 통합: **김예슬 (팀장)**
+- 구현: 팀 공동
