@@ -58,6 +58,16 @@ npm run dev
 
 ---
 
+### 두번째 방법 
+
+```
+npm install                          
+node src/server.js
+```
+- 프론트는 따로 실행 (localhost:3000 으로 실행해주세요)
+- python -m http.server 3000 ; 실행 명령어 
+
+
 ## 폴더 구조
 
 ```
